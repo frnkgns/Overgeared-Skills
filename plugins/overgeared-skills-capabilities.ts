@@ -16,7 +16,7 @@
  * identity used for discovery state, the gate, and the plugin-owned tools.
  */
 import { appendFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { createLoader, type CapabilityLoader } from "../src/capabilities/loader.mjs"
@@ -34,6 +34,7 @@ import {
   type DiscoveryState,
 } from "../src/discovery/gate.mjs"
 import { resolveProject } from "../src/discovery/resolve.mjs"
+import { isAuthorizedVaultRoot, searchNotes } from "../src/memory/search.mjs"
 import {
   collectChanges,
   defaultBranch,
@@ -44,7 +45,7 @@ import {
 } from "../src/release/collect.mjs"
 import { renderReleasePackage } from "../src/release/render.mjs"
 import { saveReleaseNote } from "../src/release/vault.mjs"
-import { createGateTracer } from "../src/discovery/gate-trace.mjs"
+import { createGateTracer, readGateTrace, summarizeAdvisoryMisses } from "../src/discovery/gate-trace.mjs"
 import type { GateTracer } from "../src/discovery/gate-trace.mjs"
 
 const SHELL_TOOLS = new Set(["bash", "shell"])
@@ -336,6 +337,35 @@ export default {
           return { content: JSON.stringify(readinessFor(discovery, sessionId), null, 2) }
         },
       })
+
+      editor.add({
+        name: "gentjin_search",
+        description:
+          "Search the resolved project's Knowledge Vault for Markdown notes matching a query. " +
+          "Returns ranked results (path, score, excerpt, metadata) using local lexical (BM25) ranking. " +
+          "Read-only: it never modifies notes. Use it to find relevant prior knowledge before " +
+          "reading full notes. Returns an empty result set (not an error) when nothing matches.",
+        input: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Search query text" },
+            limit: { type: "number", description: "Maximum results to return (default 10, max 50)" },
+            vault_root: { type: "string", description: "Optional override for the Knowledge Vault root; defaults to the resolved project vault" },
+          },
+          required: ["query"],
+          additionalProperties: false,
+        },
+        async execute(args: PluginInput) {
+          const a = args as PluginInput & { query?: string; limit?: number; vault_root?: string }
+          const allowedRoots = [resolution.knowledge_root, join(homedir(), "Documents", "KnowledgeVault")]
+          const vaultRoot = a?.vault_root ?? resolution.knowledge_root
+          if (!isAuthorizedVaultRoot(vaultRoot, allowedRoots)) {
+            return { content: JSON.stringify({ results: [], total: 0, query_terms: [], reason: "unauthorized vault root" }, null, 2) }
+          }
+          const result = searchNotes(vaultRoot, a?.query ?? "", { limit: a?.limit, allowedRoots })
+          return { content: JSON.stringify(result, null, 2) }
+        },
+      })
     })
 
     await ctx.tool.hook("execute.after", async (event: ToolHookEvent) => {
@@ -394,16 +424,18 @@ export default {
       }
 
       const gate = evaluateGate({ state: discovery, sessionId, tool: tool ?? "", filePath })
-      if (gate.advisory) {
-        // Stated and recorded rather than refused. A blanket block strands agents with nowhere to
-        // retrieve from; the trace keeps the miss visible so it stays auditable.
+      // Record a structured advisory miss whenever an operation proceeds without complete discovery
+      // readiness. Readiness stays advisory (never refused) here; the trace keeps the miss visible
+      // and auditable instead of blocking the agent outright.
+      if (gate.status && gate.status !== "ready") {
         tracer.record({
           tool: tool ?? "",
           filePath,
           projectRoot: recordFor(discovery, sessionId)?.project_root ?? resolution.project_root,
-          allowed: true,
+          allowed: gate.allowed !== false,
           status: gate.status ?? null,
           reasons: [gate.reason?.slice(0, 160) ?? "discovery readiness incomplete"],
+          missing: Array.isArray(gate.missing) ? gate.missing : [],
           sessionId,
         })
       }
@@ -414,11 +446,27 @@ export default {
       for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
         if (event?.type !== "session.idle") continue
         const report = loader.completionReport()
-        if (report.findings.length === 0) continue
+        if (report.findings.length > 0) {
+          try {
+            appendFileSync(join(tmpdir(), "overgeared-skills-adherence.log"), `${JSON.stringify(report)}\n`)
+          } catch {
+            // A session-end finding must never break the session.
+          }
+        }
         try {
-          appendFileSync(join(tmpdir(), "overgeared-skills-adherence.log"), `${JSON.stringify(report)}\n`)
+          const eventSessionId =
+            (event as { properties?: { sessionID?: string; sessionId?: string } })?.properties?.sessionID ??
+            (event as { properties?: { sessionID?: string; sessionId?: string } })?.properties?.sessionId ??
+            activeSession
+          const summary = summarizeAdvisoryMisses(readGateTrace(), { sessionId: eventSessionId ?? undefined })
+          if (summary.advisory_misses > 0) {
+            appendFileSync(
+              join(tmpdir(), "overgeared-skills-adherence.log"),
+              `${JSON.stringify({ kind: "advisory_miss_summary", session: eventSessionId ?? null, ...summary, checked_at: new Date().toISOString() })}\n`,
+            )
+          }
         } catch {
-          // A session-end finding must never break the session.
+          // A session-end summary must never break the session.
         }
       }
     })()

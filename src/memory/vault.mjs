@@ -150,6 +150,8 @@ export function isCanonical(path) {
   return CANONICAL_DIRECTORIES.some((directory) => path === directory || path.startsWith(`${directory}/`))
 }
 
+export { searchNotes } from "./search.mjs"
+
 /** The first prose block of a note, used as its index description when none is declared. */
 export function summarize(text, limit = 240) {
   const plain = plainText(splitFrontmatter(text).body)

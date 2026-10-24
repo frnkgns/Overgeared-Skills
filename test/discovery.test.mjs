@@ -387,7 +387,28 @@ test("readiness is invalidated when an inspected file is deleted", () => {
   }
 })
 
-test("readiness is invalidated when the checked-out revision moves", () => {
+test("metadata-only revision movement does not invalidate readiness", () => {
+  const { base, root, state, sessionId, target } = readySession("s1")
+  try {
+    mkdirSync(join(root, ".git", "refs", "heads"), { recursive: true })
+    writeFileSync(join(root, ".git", "HEAD"), "ref: refs/heads/main\n")
+    writeFileSync(join(root, ".git", "refs", "heads", "main"), `${"a".repeat(40)}\n`)
+    writeFileSync(target, "module.exports = 5\n")
+    noteRead(state, sessionId, target)
+    declareScope(state, sessionId, [target])
+    noteRead(state, sessionId, join(resolveProject(root).knowledge_root, "memory-index.md"))
+    recordMemory(state, sessionId, { status: "ok", notes_read: [], no_relevant_notes: true, searched: ["memory-index.md"] })
+    assert.equal(readinessFor(state, sessionId).status, READINESS.READY)
+
+    // Only the commit ref moves; the inspected file content is unchanged, so readiness holds.
+    writeFileSync(join(root, ".git", "refs", "heads", "main"), `${"b".repeat(40)}\n`)
+    assert.equal(readinessFor(state, sessionId).status, READINESS.READY)
+  } finally {
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test("a content change after metadata movement still invalidates readiness", () => {
   const { base, root, state, sessionId, target } = readySession("s1")
   try {
     mkdirSync(join(root, ".git", "refs", "heads"), { recursive: true })
@@ -401,6 +422,7 @@ test("readiness is invalidated when the checked-out revision moves", () => {
     assert.equal(readinessFor(state, sessionId).status, READINESS.READY)
 
     writeFileSync(join(root, ".git", "refs", "heads", "main"), `${"b".repeat(40)}\n`)
+    writeFileSync(target, "module.exports = 999\n")
     assert.notEqual(readinessFor(state, sessionId).status, READINESS.READY)
   } finally {
     rmSync(base, { recursive: true, force: true })

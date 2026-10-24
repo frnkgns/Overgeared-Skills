@@ -21,6 +21,10 @@ export default {
       const command = (event.input ?? {}).command
       if (typeof command !== "string") return
 
+      // Push protection is enforced by default. An agent-editable authorization file is NOT a
+      // trustworthy boundary, so the guardrail never reads one automatically. A human may still
+      // bypass via the documented per-session environment override (set before launching OpenCode),
+      // or by running the push outside the agent.
       const verdict = evaluateGitCommand(command)
       if (!verdict.blocked) return
 

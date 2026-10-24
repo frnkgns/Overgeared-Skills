@@ -1,6 +1,12 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { evaluateGitCommand, guardrailRules } from "../src/guardrails/git-guardrails.mjs"
+import {
+  consumeAuthorization,
+  createAuthorization,
+  evaluateGitCommand,
+  guardrailRules,
+  validateAuthorization,
+} from "../src/guardrails/git-guardrails.mjs"
 import guardrailPlugin from "../guardrails/overgeared-skills-guardrails.js"
 
 function withAllow(value, fn) {
@@ -138,6 +144,89 @@ test("the plugin ignores non-shell tools and missing args", async () => {
   await before({ tool: "shell", input: {} })
   await before({ tool: "shell", input: { command: 123 } })
   await before({})
+})
+
+test("createAuthorization rejects agent-generated approvers", () => {
+  const r = createAuthorization({ approved_by: "agent", action: "push", scope: "origin/main" })
+  assert.equal(r.ok, false)
+  assert.ok(r.errors.some((e) => /human authorizer/i.test(e)))
+})
+
+test("createAuthorization rejects missing scope", () => {
+  const r = createAuthorization({ approved_by: "human", action: "push" })
+  assert.equal(r.ok, false)
+  assert.ok(r.errors.some((e) => /scope is required/i.test(e)))
+})
+
+test("createAuthorization accepts a valid human authorization", () => {
+  const r = createAuthorization({ approved_by: "human", action: "push", scope: "origin/main", repository: "repo", branch: "main" })
+  assert.equal(r.ok, true)
+  assert.equal(r.token.approved_by, "human")
+  assert.equal(r.token.consumed, false)
+})
+
+test("a valid authorization permits a matching push", () => {
+  const { token } = createAuthorization({ approved_by: "human", action: "push", scope: "origin/main", repository: "repo", branch: "main" })
+  const v = evaluateGitCommand("git push origin main", { authorization: token, repository: "repo", branch: "main" })
+  assert.equal(v.blocked, false)
+})
+
+test("an unauthorized push is still blocked", () => {
+  const v = evaluateGitCommand("git push origin main")
+  assert.equal(v.blocked, true)
+  assert.equal(v.rule, "push")
+})
+
+test("force push remains blocked even with authorization", () => {
+  const { token } = createAuthorization({ approved_by: "human", action: "push", scope: "origin/main", repository: "repo", branch: "main" })
+  const v = evaluateGitCommand("git push --force origin main", { authorization: token, repository: "repo", branch: "main" })
+  assert.equal(v.blocked, true)
+  assert.equal(v.rule, "push-force")
+})
+
+test("validateAuthorization rejects a consumed token (replay)", () => {
+  const { token } = createAuthorization({ approved_by: "human", action: "push", scope: "origin/main" })
+  const consumed = consumeAuthorization(token)
+  const v = validateAuthorization(consumed, {})
+  assert.equal(v.ok, false)
+  assert.ok(v.errors.some((e) => /consumed/i.test(e)))
+})
+
+test("validateAuthorization rejects an expired token", () => {
+  const { token } = createAuthorization({ approved_by: "human", action: "push", scope: "origin/main", expires_at: "2020-01-01T00:00:00Z" })
+  const v = validateAuthorization(token, {})
+  assert.equal(v.ok, false)
+  assert.ok(v.errors.some((e) => /expired/i.test(e)))
+})
+
+test("validateAuthorization rejects a branch mismatch", () => {
+  const { token } = createAuthorization({ approved_by: "human", action: "push", scope: "origin/main", branch: "main" })
+  const v = validateAuthorization(token, { branch: "develop" })
+  assert.equal(v.ok, false)
+  assert.ok(v.errors.some((e) => /branch/i.test(e)))
+})
+
+test("validateAuthorization rejects a repository mismatch", () => {
+  const { token } = createAuthorization({ approved_by: "human", action: "push", scope: "origin/main", repository: "repo-a" })
+  const v = validateAuthorization(token, { repository: "repo-b" })
+  assert.equal(v.ok, false)
+  assert.ok(v.errors.some((e) => /repository/i.test(e)))
+})
+
+test("validateAuthorization rejects an agent-generated approver", () => {
+  const token = { approved_by: "agent", action: "push", scope: "origin/main", consumed: false }
+  const v = validateAuthorization(token, {})
+  assert.equal(v.ok, false)
+  assert.ok(v.errors.some((e) => /human authorizer/i.test(e)))
+})
+
+test("consumeAuthorization marks the token consumed", () => {
+  const { token } = createAuthorization({ approved_by: "human", action: "push", scope: "origin/main" })
+  const consumed = consumeAuthorization(token)
+  assert.equal(consumed.consumed, true)
+  assert.ok(typeof consumed.consumed_at === "string")
+  // original untouched
+  assert.equal(token.consumed, false)
 })
 
 test("the plugin still blocks the legacy V1 bash tool name", async () => {

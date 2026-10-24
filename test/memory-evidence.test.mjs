@@ -11,6 +11,7 @@ import {
   noteRead,
   recordMemory,
   readinessFor,
+  knowledgeRootHasNotes,
 } from "../src/discovery/gate.mjs"
 import { resolveProject } from "../src/discovery/resolve.mjs"
 
@@ -156,5 +157,65 @@ test("an existing vault still requires a scoped, observed search", () => {
     assert.notEqual(readinessFor(ctx.state, ctx.sessionId).status, "ready")
   } finally {
     rmSync(ctx.base, { recursive: true, force: true })
+  }
+})
+
+test("knowledgeRootHasNotes recognizes a note without memory-index.md", () => {
+  const base = mkdtempSync(join(tmpdir(), "gentjin-kh-"))
+  try {
+    const vault = join(base, "vault")
+    mkdirSync(join(vault, "knowledge"), { recursive: true })
+    writeFileSync(join(vault, "knowledge", "note.md"), "# A note\n\nSome content.\n")
+    assert.equal(knowledgeRootHasNotes(vault), true)
+  } finally {
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test("knowledgeRootHasNotes returns false for an empty vault", () => {
+  const base = mkdtempSync(join(tmpdir(), "gentjin-kh-"))
+  try {
+    const vault = join(base, "vault")
+    mkdirSync(vault, { recursive: true })
+    assert.equal(knowledgeRootHasNotes(vault), false)
+  } finally {
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test("a vault with a note but no index still requires a scoped search", () => {
+  const ctx = ready("mem-note-no-index")
+  try {
+    mkdirSync(ctx.vault, { recursive: true })
+    mkdirSync(join(ctx.vault, "knowledge"), { recursive: true })
+    writeFileSync(join(ctx.vault, "knowledge", "note.md"), "# note\n")
+    recordMemory(ctx.state, ctx.sessionId, { status: "ok", notes_read: [], no_relevant_notes: true })
+    assert.notEqual(readinessFor(ctx.state, ctx.sessionId).status, "ready")
+  } finally {
+    rmSync(ctx.base, { recursive: true, force: true })
+  }
+})
+
+test("knowledgeRootHasNotes returns false for a missing vault", () => {
+  const base = mkdtempSync(join(tmpdir(), "gentjin-kh-"))
+  try {
+    assert.equal(knowledgeRootHasNotes(join(base, "does-not-exist")), false)
+  } finally {
+    rmSync(base, { recursive: true, force: true })
+  }
+})
+
+test("knowledgeRootHasNotes ignores non-markdown and ignored directories", () => {
+  const base = mkdtempSync(join(tmpdir(), "gentjin-kh-"))
+  try {
+    const vault = join(base, "vault")
+    mkdirSync(join(vault, ".git"), { recursive: true })
+    mkdirSync(join(vault, "node_modules"), { recursive: true })
+    writeFileSync(join(vault, ".git", "HEAD"), "ref")
+    writeFileSync(join(vault, "node_modules", "x.md"), "# x")
+    writeFileSync(join(vault, "binary.bin"), "data")
+    assert.equal(knowledgeRootHasNotes(vault), false)
+  } finally {
+    rmSync(base, { recursive: true, force: true })
   }
 })

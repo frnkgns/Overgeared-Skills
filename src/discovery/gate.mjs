@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs"
+import { listNotes } from "../memory/vault.mjs"
 import { isAbsolute, resolve } from "node:path"
 import { isWithin } from "./resolve.mjs"
 import { contextChanged, snapshotContext } from "./staleness.mjs"
@@ -210,8 +211,10 @@ function memoryCheckFor(record, session) {
 
 export function knowledgeRootHasNotes(knowledgeRoot) {
   if (!knowledgeRoot || !existsSync(knowledgeRoot)) return false
-  const index = resolve(knowledgeRoot, "memory-index.md")
-  return existsSync(index)
+  // A vault is considered to hold notes when it contains any readable Markdown note, not only
+  // when a memory-index.md is present. This keeps memory verification working for vaults that
+  // have not yet been indexed, while still treating a truly empty vault as having no notes.
+  return listNotes(knowledgeRoot).length > 0
 }
 
 /** Captures what the current verdict depends on, so later drift can be detected. */
@@ -327,6 +330,7 @@ export function evaluateGate({ state, sessionId, tool, filePath }) {
     allowed: true,
     status: verdict.status,
     advisory: true,
+    missing: verdict.reasons.slice(),
     reason:
       `Required before this change: ${verdict.reasons.join("; ")}. ` +
       `Inspect the file with a read tool, declare the intended paths with the gentjin_discovery tool ` +

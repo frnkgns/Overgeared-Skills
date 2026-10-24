@@ -158,12 +158,12 @@ test("the plugin never mutates a user prompt", async () => {
   plugin.cleanup()
 })
 
-test("the plugin registers all three tools on a v2 context", async () => {
+test("the plugin registers all four tools on a v2 context", async () => {
   const plugin = await mount("v2-tools")
 
   assert.deepEqual(
     [...plugin.tools.keys()].sort(),
-    ["gentjin_discovery", "gentjin_release_notes", "overgeared_skills_capability"],
+    ["gentjin_discovery", "gentjin_release_notes", "gentjin_search", "overgeared_skills_capability"],
   )
 
   for (const tool of plugin.tools.values()) {

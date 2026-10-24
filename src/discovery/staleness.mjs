@@ -103,8 +103,11 @@ export function contextChanged(snapshot, { projectRoot, readPaths = [], configPa
     snapshot.git.commit !== gitNow.commit ||
     snapshot.git.branch !== gitNow.branch
 
+  // Content-based staleness is the authority: a commit/branch move alone does not invalidate
+  // the inspected context when the files that were actually read are unchanged. Git movement
+  // is still reported for observability, but it never clears readiness by itself.
   return {
-    invalidated: changed.length > 0 || removed.length > 0 || gitMoved,
+    invalidated: changed.length > 0 || removed.length > 0,
     changed,
     removed,
     git: gitMoved ? { before: snapshot.git, after: gitNow } : null,
