@@ -1,4 +1,4 @@
-import { attemptFingerprint } from "../task/record.mjs"
+import { attemptFingerprint, recordAttempt } from "../task/record.mjs"
 
 const DEFAULT_MAX_ATTEMPTS = 3
 
@@ -145,4 +145,36 @@ export function redact(text, options = {}) {
     return { text: `${output.slice(0, maxLength)}…[TRUNCATED ${output.length - maxLength} chars]`, truncated: true }
   }
   return { text: output, truncated: false }
+}
+
+export function retryGuardFromRecord(record, options = {}) {
+  const guard = new RetryGuard({ maxAttempts: options.maxAttempts ?? 3 })
+  for (const prior of record?.attempts ?? []) guard.register(prior)
+  return guard
+}
+
+export function evaluateRetry(record, attempt, options = {}) {
+  const guard = retryGuardFromRecord(record, options)
+  const check = guard.checkRepeat(attempt)
+  if (check.allowed) {
+    return { allowed: true, reason: check.reason, fingerprint: check.fingerprint }
+  }
+  const attemptCount = (record?.attempts?.length ?? 0) + 1
+  const checkpoint = guard.shouldCheckpoint(attemptCount)
+    ? guard.checkpoint(attempt.summary ?? "retry limit reached")
+    : null
+  return {
+    allowed: false,
+    reason: check.reason,
+    required: check.required,
+    fingerprint: check.fingerprint,
+    previous_count: check.previous_count,
+    checkpoint,
+  }
+}
+
+export function recordAttemptWithRetry(record, attempt, options = {}) {
+  const retry = evaluateRetry(record, attempt, options)
+  if (!retry.allowed) return { record, retry }
+  return { record: recordAttempt(record, attempt), retry }
 }

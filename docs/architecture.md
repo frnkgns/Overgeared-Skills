@@ -25,7 +25,7 @@ A control belongs in the enforcement layer only when a hook supplies real eviden
 | Validator | `src/schema/validate.mjs` | Zero-dependency JSON Schema subset |
 | Registry | `registry/skills.json` | Generated skill and capability contracts |
 | Router | `src/routing/route.mjs` | Inspectable routing decisions, scope checks |
-| Memory | `src/memory/failure-awareness.mjs` | Retry bounding, failure retrieval, redaction |
+| Memory | `src/memory/vault.mjs`, `src/memory/search.mjs`, `src/memory/failure-awareness.mjs` | Vault walking, local lexical (BM25) search, retry bounding, failure retrieval, redaction |
 | Eval runner | `evals/run.mjs` | Contract and live modes, metrics, exit codes |
 
 ## Schemas

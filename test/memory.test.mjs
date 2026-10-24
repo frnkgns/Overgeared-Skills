@@ -3,8 +3,8 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import { RetryGuard, retrieveRelevantFailures, classifyCertainty, redact } from "../src/memory/failure-awareness.mjs"
-import { attemptFingerprint } from "../src/task/record.mjs"
+import { RetryGuard, retrieveRelevantFailures, classifyCertainty, redact, evaluateRetry, recordAttemptWithRetry, retryGuardFromRecord } from "../src/memory/failure-awareness.mjs"
+import { attemptFingerprint, makeTaskRecord, recordAttempt } from "../src/task/record.mjs"
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..")
 
@@ -195,4 +195,76 @@ test("failure-record template documents every required field", () => {
   ]) {
     assert.ok(template.includes(field), `template missing: ${field}`)
   }
+})
+
+test("evaluateRetry allows a first attempt", () => {
+  const record = makeTaskRecord({ task_id: "t1" })
+  const attempt = { summary: "clear the cache", files_touched: [], verification: [] }
+  const res = evaluateRetry(record, attempt)
+  assert.equal(res.allowed, true)
+})
+
+test("evaluateRetry blocks an identical repeat without new evidence", () => {
+  const attempt = { summary: "clear the cache", files_touched: [], verification: [] }
+  const record = recordAttempt(makeTaskRecord({ task_id: "t2" }), attempt)
+  const res = evaluateRetry(record, { ...attempt })
+  assert.equal(res.allowed, false)
+  assert.match(res.reason, /identical approach already attempted/)
+  assert.ok(Array.isArray(res.required))
+})
+
+test("evaluateRetry allows a repeat with new evidence", () => {
+  const attempt = { summary: "clear the cache", files_touched: [], verification: [] }
+  const record = recordAttempt(makeTaskRecord({ task_id: "t3" }), attempt)
+  const res = evaluateRetry(record, { ...attempt, evidence: ["new stack trace"] })
+  assert.equal(res.allowed, true)
+})
+
+test("evaluateRetry tracks different failures independently", () => {
+  const a = { summary: "clear the cache", files_touched: [], verification: [] }
+  const b = { summary: "raise the timeout", files_touched: [], verification: [] }
+  const record = recordAttempt(makeTaskRecord({ task_id: "t4" }), a)
+  const res = evaluateRetry(record, b)
+  assert.equal(res.allowed, true)
+})
+
+test("recordAttemptWithRetry records when allowed", () => {
+  const record = makeTaskRecord({ task_id: "t5" })
+  const attempt = { summary: "patch parser", files_touched: [], verification: [] }
+  const out = recordAttemptWithRetry(record, attempt)
+  assert.equal(out.retry.allowed, true)
+  assert.equal(out.record.attempts.length, 1)
+})
+
+test("recordAttemptWithRetry does not record when blocked", () => {
+  const attempt = { summary: "patch parser", files_touched: [], verification: [] }
+  const record = recordAttempt(makeTaskRecord({ task_id: "t6" }), attempt)
+  const out = recordAttemptWithRetry(record, { ...attempt })
+  assert.equal(out.retry.allowed, false)
+  assert.equal(out.record.attempts.length, 1)
+})
+
+test("retry exhaustion produces a checkpoint", () => {
+  const attempt = { summary: "retry me", files_touched: [], verification: [] }
+  let record = makeTaskRecord({ task_id: "t7" })
+  record = recordAttempt(record, attempt)
+  const out = recordAttemptWithRetry(record, { ...attempt }, { maxAttempts: 2 })
+  assert.equal(out.retry.allowed, false)
+  if (out.retry.checkpoint) {
+    assert.equal(out.retry.checkpoint.checkpoint_required, true)
+  }
+})
+
+test("retryGuardFromRecord rebuilds guard state from a record", () => {
+  const attempt = { summary: "x", files_touched: [], verification: [] }
+  const record = recordAttempt(makeTaskRecord({ task_id: "t8" }), attempt)
+  const guard = retryGuardFromRecord(record)
+  const check = guard.checkRepeat({ ...attempt })
+  assert.equal(check.allowed, false)
+})
+
+test("successful correction advances state without retry block", () => {
+  const record = makeTaskRecord({ task_id: "t9", state: "in_progress" })
+  const res = evaluateRetry(record, { summary: "new approach", files_touched: ["a.js"], verification: ["npm test"] })
+  assert.equal(res.allowed, true)
 })

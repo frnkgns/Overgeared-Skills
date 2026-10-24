@@ -89,4 +89,13 @@ These are documented expectations with no runtime enforcement:
 
 ## Not yet enforced
 
-Discovery readiness before a project edit. That is the work this finding enables.
+Discovery readiness before a project edit is **advisory, not refused** (OR-01 Phase 1):
+the gate states what is missing, records a structured advisory-miss trace entry
+(tool, relative path, readiness state, missing prerequisites, anonymized session,
+timestamp), and exposes `summarizeAdvisoryMisses` for reporting. A hard block was
+deliberately avoided because it stranded agents with nowhere to retrieve from.
+
+Knowledge Vault retrieval is **code-assisted but on-demand**: `gentjin_search` provides
+local lexical (BM25) ranking over Markdown notes; it is never auto-injected into the
+prompt (the prompt-injection hook was deliberately removed; see the vault note
+`per-request-retrieval-deleted-from-main`).

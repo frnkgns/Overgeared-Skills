@@ -310,6 +310,8 @@ Read memory-index.md                       ← a catalog of one-line description
       ↓
 Determine intent, module, and time scope
       ↓
+Optional: code-assisted lookup             ← gentjin_search (local lexical/BM25 ranking)
+      ↓
 Open only the notes relevant to what was asked
       ↓
 Stop as soon as context is sufficient
@@ -324,6 +326,11 @@ Capture durable changes
       ↓
 Update the index if the knowledge map changed
 ```
+
+`gentjin_search` is a read-only, local, lexical (BM25) search over Markdown notes in the
+resolved vault. It returns ranked paths, scores, short excerpts, and frontmatter metadata.
+It never injects note content into the prompt and never mutates notes. Use it to narrow
+which notes to open; then read those notes directly. It is not semantic or vector search.
 
 **Recording "no relevant notes" is a complete, valid answer.** One cheap call, and it satisfies the
 gate. Do not stretch to find a note just to have one; that is as wrong as skipping the lookup.
