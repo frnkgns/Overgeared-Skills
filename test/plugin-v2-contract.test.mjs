@@ -183,3 +183,47 @@ test("every registered tool returns structured content", async () => {
 
   plugin.cleanup()
 })
+
+test("the orchestrator cannot call implementation tools directly", async () => {
+  const plugin = await mount("v2-orchestrator-impl")
+
+  for (const tool of ["edit", "write", "patch", "shell", "bash", "execute"]) {
+    await assert.rejects(
+      () => plugin.before({ tool, agent: "oa-orchestrator", input: {} }),
+      /primary orchestrator/,
+      `${tool} must be refused for the orchestrator`,
+    )
+  }
+
+  plugin.cleanup()
+})
+
+test("the orchestrator may delegate only to registered Overgeared specialists", async () => {
+  const plugin = await mount("v2-orchestrator-delegation")
+
+  await plugin.before({ tool: "subagent", agent: "oa-orchestrator", input: { agent: "oa-frontend-developer" } })
+
+  for (const target of ["build", "oa-orchestrator", "general", "oa-unknown"]) {
+    await assert.rejects(
+      () => plugin.before({ tool: "subagent", agent: "oa-orchestrator", input: { agent: target } }),
+      /may delegate only to a registered Overgeared specialist/,
+      `${target} must not be a valid delegation target`,
+    )
+  }
+
+  await assert.rejects(
+    () => plugin.before({ tool: "subagent", agent: "oa-orchestrator", input: {} }),
+    /may delegate only to a registered Overgeared specialist/,
+  )
+
+  plugin.cleanup()
+})
+
+test("specialists keep their implementation and delegation-free behaviour", async () => {
+  const plugin = await mount("v2-specialist-unrestricted")
+
+  await plugin.before({ tool: "edit", agent: "oa-backend-developer", input: { filePath: target } })
+  await plugin.before({ tool: "shell", agent: "oa-backend-developer", input: { command: "git status" } })
+
+  plugin.cleanup()
+})

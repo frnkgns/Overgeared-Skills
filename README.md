@@ -500,6 +500,10 @@ Overgeared Skills is designed to make the cautious path the easy path:
   path is updated to follow it.
 - Credentials and environment values stay out of the repository.
 - Verification is reported honestly; checks are never claimed without evidence.
+- A primary orchestrator agent that delegates implementation keeps no direct edit, shell,
+  or Code Mode authority: `src/guardrails/orchestrator-guard.mjs` refuses those calls and
+  refuses delegation outside the configured specialist list at `tool.execute.before`.
+  Skill loading and answer-only self-performance remain instruction-level.
 - Real application data is preferred over mock or placeholder data.
 - Security and data-integrity checks are applied when the change warrants them.
 
@@ -564,7 +568,8 @@ Overgeared Skills is designed to make the cautious path the easy path:
 │   ├── trace/writer.mjs       JSONL traces, redaction, coverage
 │   ├── trace/plugin-body.mjs  Trace plugin implementation
 │   ├── trace/plugin-support.mjs
-│   └── guardrails/git-guardrails.mjs
+│   ├── guardrails/git-guardrails.mjs
+│   └── guardrails/orchestrator-guard.mjs
 ├── registry/
 │   ├── skills.json            Generated skill contracts
 │   └── capabilities.json      Unified skill + command catalog
@@ -585,6 +590,7 @@ Overgeared Skills is designed to make the cautious path the easy path:
 │   ├── trace/plugin-body.mjs  Trace plugin implementation
 │   ├── trace/plugin-support.mjs
 │   ├── guardrails/git-guardrails.mjs
+│   ├── guardrails/orchestrator-guard.mjs
 │   └── plugin-api.mjs         Plugin.define with an identity fallback
 ├── scripts/
 │   ├── build-registry.mjs
