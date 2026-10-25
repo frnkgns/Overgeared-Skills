@@ -47,6 +47,7 @@ import { renderReleasePackage } from "../src/release/render.mjs"
 import { saveReleaseNote } from "../src/release/vault.mjs"
 import { createGateTracer, readGateTrace, summarizeAdvisoryMisses } from "../src/discovery/gate-trace.mjs"
 import type { GateTracer } from "../src/discovery/gate-trace.mjs"
+import { evaluateOrchestratorGuard } from "../src/guardrails/orchestrator-guard.mjs"
 
 const SHELL_TOOLS = new Set(["bash", "shell"])
 
@@ -79,6 +80,7 @@ interface ToolInput {
 interface ToolHookEvent {
   tool?: string
   sessionID?: string
+  agent?: string
   input?: unknown
   status?: "completed" | "error"
   result?: unknown
@@ -382,6 +384,13 @@ export default {
       const tool = event?.tool
       const args = (event?.input ?? {}) as ToolInput
       const filePath = args.filePath
+
+      const orchestratorBlock = evaluateOrchestratorGuard({
+        agent: event?.agent,
+        tool,
+        input: event?.input,
+      })
+      if (orchestratorBlock) throw new Error(orchestratorBlock)
 
       if (tool === "read" && filePath) {
         noteRead(discovery, sessionId, filePath)
